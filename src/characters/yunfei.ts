@@ -10,4 +10,6 @@ Keep replies under 3 sentences.
 `,
   delayRange: [6, 14],
   onlineChance: 0.9,
+  responseChance: 0.8,  // very chatty
+  mentionBoost: 3.0,    // jumps to 100% if mentioned
 };
