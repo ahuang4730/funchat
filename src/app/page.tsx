@@ -21,54 +21,62 @@ export default function Home() {
   }>({});
   const [lastActivity, setLastActivity] = useState(Date.now());
 
-  /* Keeps the conversation going for a few extra replies after someone talks */
+  /* lets the room keep talking for a few follow-up replies */
   const energyRef = useRef(0);
 
-  /* Stores who spoke last so the same character is less likely to go again */
+  /* remembers who spoke last */
   const lastSpeakerRef = useRef<string | null>(null);
 
-  /* Timer used for idle chatter when the room is quiet */
+  /* used for idle chatter timing */
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* Holds the latest messages so delayed replies still read fresh chat history */
+  /* keeps the newest message list available inside delayed timeouts */
   const messagesRef = useRef<Message[]>([]);
 
-  /* Used to auto-scroll to the bottom of the chat */
+  /* used to scroll to the newest message */
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  /* Keep the ref updated with the newest messages */
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  /* Auto-scroll whenever messages or typing text changes */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typingChars]);
 
-  /* Decide who starts online or offline when the page loads */
+  /* decide who starts online/offline */
   useEffect(() => {
     const statuses: { [key: string]: string } = {};
 
     characters.forEach((c) => {
-      statuses[c.name] = Math.random() < c.onlineChance ? "online" : "offline";
+      if (c.onlineChance <= 0) {
+        statuses[c.name] = "offline";
+      } else if (c.onlineChance >= 1) {
+        statuses[c.name] = "online";
+      } else {
+        statuses[c.name] =
+          Math.random() < c.onlineChance ? "online" : "offline";
+      }
     });
 
-    /* Make sure at least one character is online */
+    /* make sure at least one valid character is online */
     const onlineCount = Object.values(statuses).filter(
       (status) => status === "online"
     ).length;
 
     if (onlineCount === 0) {
-      const randomChar =
-        characters[Math.floor(Math.random() * characters.length)];
-      statuses[randomChar.name] = "online";
+      const possibleOnline = characters.filter((c) => c.onlineChance > 0);
+
+      if (possibleOnline.length > 0) {
+        const randomChar =
+          possibleOnline[Math.floor(Math.random() * possibleOnline.length)];
+        statuses[randomChar.name] = "online";
+      }
     }
 
     setOnlineStatuses(statuses);
   }, []);
 
-  /* Sends the user's message into the room */
   function sendMessage() {
     if (!input.trim()) return;
 
@@ -83,13 +91,12 @@ export default function Home() {
     setInput("");
     setLastActivity(Date.now());
 
-    /* Give the room momentum so more than one reply can happen */
+    /* user message gives the room momentum */
     energyRef.current = 3;
 
     triggerBotConversation(msg);
   }
 
-  /* Picks which character should reply next */
   function triggerBotConversation(targetMessage: Message) {
     if (energyRef.current <= 0) return;
 
@@ -99,8 +106,16 @@ export default function Home() {
 
     if (online.length === 0) return;
 
-    /* If any online character is named directly, prioritize them */
-    const mentioned = getMentionedCharacters(online, targetMessage);
+    /* stop characters from replying to their own visible message */
+    const eligible = online.filter((c) => {
+      if (targetMessage.sender === "System") return true;
+      return c.name !== targetMessage.sender;
+    });
+
+    if (eligible.length === 0) return;
+
+    /* if an online character is named directly, prioritize them */
+    const mentioned = getMentionedCharacters(eligible, targetMessage);
 
     if (mentioned.length === 1) {
       scheduleReply(mentioned[0], targetMessage);
@@ -114,8 +129,8 @@ export default function Home() {
       return;
     }
 
-    /* Otherwise score characters and pick from the best few */
-    const scoredCharacters = online.map((char) => ({
+    /* otherwise score eligible characters and pick from the best few */
+    const scoredCharacters = eligible.map((char) => ({
       char,
       score: getCharacterReplyScore(char, lastSpeakerRef.current),
     }));
@@ -147,7 +162,6 @@ export default function Home() {
     scheduleReply(chosenChar, targetMessage);
   }
 
-  /* Makes one chosen character reply after their delay time */
   function scheduleReply(char: Character, target: Message) {
     const minDelay = char.delayRange[0];
     const maxDelay = char.delayRange[1];
@@ -155,7 +169,7 @@ export default function Home() {
     const delay =
       Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
 
-    /* Show typing a little before the actual message appears */
+    /* show typing shortly before the real reply appears */
     const typingStartDelay = Math.min(1200, delay * 500);
 
     setTimeout(() => {
@@ -166,7 +180,6 @@ export default function Home() {
 
     setTimeout(async () => {
       try {
-        /* Send recent background context only */
         const history = getRecentHistory(messagesRef.current);
 
         const res = await fetch("/api", {
@@ -200,7 +213,6 @@ export default function Home() {
           return;
         }
 
-        /* Try a few possible places the reply text could be stored */
         const rawAiText =
           data.choices?.[0]?.message?.content?.trim() ||
           data.message?.content?.trim() ||
@@ -213,7 +225,6 @@ export default function Home() {
           return;
         }
 
-        /* Clean weird formatting like "Ruoan:" or action text */
         const aiText = cleanAiText(rawAiText, char.name);
 
         if (!aiText) {
@@ -240,10 +251,8 @@ export default function Home() {
         lastSpeakerRef.current = char.name;
         setLastActivity(Date.now());
 
-        /* Spend one point of conversation momentum */
         energyRef.current--;
 
-        /* Let the room continue naturally for a bit */
         if (energyRef.current > 0) {
           setTimeout(() => triggerBotConversation(aiMessage), 2500);
         }
@@ -255,7 +264,7 @@ export default function Home() {
     }, delay * 1000);
   }
 
-  /* If nobody talks for a while, let a character continue the current topic */
+  /* when the room is quiet, continue the current topic instead of resetting it */
   useEffect(() => {
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
@@ -268,7 +277,15 @@ export default function Home() {
 
       if (online.length === 0) return;
 
-      const char = online[Math.floor(Math.random() * online.length)];
+      /* avoid picking the same person who just spoke */
+      const possibleIdleSpeakers = online.filter(
+        (c) => c.name !== lastSpeakerRef.current
+      );
+
+      const idlePool =
+        possibleIdleSpeakers.length > 0 ? possibleIdleSpeakers : online;
+
+      const char = idlePool[Math.floor(Math.random() * idlePool.length)];
 
       const idlePrompt: Message = {
         sender: "System",

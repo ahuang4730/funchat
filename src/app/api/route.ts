@@ -22,27 +22,31 @@ export async function POST(request: Request) {
 
     const finalInstruction =
       replyTarget.sender === "System"
-        ? `Important: You are ${characterName}.\n` +
-          `You are not replying to a visible user message.\n` +
-          `Use the recent chat as context and continue the current conversation naturally.\n` +
-          `If there is an active topic, stay on that topic.\n` +
-          `Only introduce a new topic if the conversation clearly feels finished.\n` +
-          `Write only ${characterName}'s next single chat reply.\n` +
-          `Do not include your name at the start.\n` +
-          `Do not write dialogue for anyone else.\n` +
-          `Do not narrate actions.`
-        : `Important: You are ${characterName}.\n` +
-          `You are replying specifically to this message:\n` +
-          `Speaker: ${replyTarget.sender}\n` +
-          `Type: ${replyTarget.isUser ? "user" : "character"}\n` +
-          `Message: ${replyTarget.text}\n\n` +
-          `Treat earlier messages as background context only.\n` +
-          `Do not assume unrelated background messages were directed at you.\n` +
-          `Reply mainly to the target message above.\n` +
-          `Write only ${characterName}'s next single chat reply.\n` +
-          `Do not include your name at the start.\n` +
-          `Do not write dialogue for anyone else.\n` +
-          `Do not narrate actions.`;
+        ? `Important: You are ${characterName}.
+You are not replying to a visible user message.
+Use the recent chat as background context and continue the current conversation naturally.
+If there is an active topic, stay on that topic.
+Only introduce a new topic if the conversation clearly feels finished.
+Do not continue as if you are replying to your own previous message.
+Do not act like you are having a conversation with yourself.
+If your own earlier message appears in the background, treat it as context only, not as something to answer directly.
+Write only ${characterName}'s next single chat reply.
+Do not include your name at the start.
+Do not write dialogue for anyone else.
+Do not narrate actions.`
+        : `Important: You are ${characterName}.
+You are replying specifically to this message:
+Speaker: ${replyTarget.sender}
+Type: ${replyTarget.isUser ? "user" : "character"}
+Message: ${replyTarget.text}
+
+Treat earlier messages as background context only.
+Do not assume unrelated background messages were directed at you.
+Reply mainly to the target message above.
+Write only ${characterName}'s next single chat reply.
+Do not include your name at the start.
+Do not write dialogue for anyone else.
+Do not narrate actions.`;
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
